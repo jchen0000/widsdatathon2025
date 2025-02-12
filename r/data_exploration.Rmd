@@ -10,39 +10,25 @@ knitr::opts_chunk$set(echo = TRUE)
 ```
 
 ```{r}
+# Load necessary libraries
+library(readxl)  # For reading Excel files
+library(readr)   # For reading CSV files
 
 path <- "data/train"  # Update this with your actual path
-# Load necessary libraries
-library(readxl)
-library(utils)  # For unzip function
-library(readr)  # For reading CSV files
+path2<-"/Users/jinglv/Downloads"
 
 
-# Read Excel files
+# Read the Excel files
 train_categorical_metadata <- read_excel(file.path(path, "TRAIN_CATEGORICAL_METADATA.xlsx"))
+train_functional_connectome <- read_csv(file.path(path2, "TRAIN_FUNCTIONAL_CONNECTOME_MATRICES.csv"))
 train_quantitative_metadata <- read_excel(file.path(path, "TRAIN_QUANTITATIVE_METADATA.xlsx"))
 training_solutions <- read_excel(file.path(path, "TRAINING_SOLUTIONS.xlsx"))
 
-# Unzip the CSV file
-zip_file <- file.path(path, "TRAIN_FUNCTIONAL_CONNECTOME_MATRICES.csv.zip")
-unzip(zip_file, exdir = path)  # Extracts files to the same directory
-
-# Find the extracted CSV file
-csv_files <- list.files(path, pattern = "TRAIN_FUNCTIONAL_CONNECTOME_MATRICES.*\\.csv$", full.names = TRUE)
-
-# Read the first extracted CSV file
-if (length(csv_files) > 0) {
-  train_functional_connectome <- read_csv(csv_files[1])  # Using readr::read_csv for faster reading
-} else {
-  stop("No CSV file found after unzipping.")
-}
-
-# Display first few rows of each dataset
+# Display the first few rows of each dataset
 head(train_categorical_metadata)
 head(train_functional_connectome)
 head(train_quantitative_metadata)
 head(training_solutions)
-
 
 ```
 
