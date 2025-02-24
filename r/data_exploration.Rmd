@@ -9,10 +9,17 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
+
+```{r}
+library(pheatmap)
+library(igraph)
+```
+
 ```{r}
 # Load necessary libraries
 library(readxl)  # For reading Excel files
 library(readr)   # For reading CSV files
+setwd("/Users/jinglv/Desktop/RA/widsdatathon2025")
 
 path <- "data/train"  # Update this with your actual path
 path2<-"/Users/jinglv/Downloads"
@@ -30,5 +37,98 @@ head(train_functional_connectome)
 head(train_quantitative_metadata)
 head(training_solutions)
 
+
+summary(train_functional_connectome$`110throw_153thcolumn`)
 ```
 
+# MRI preprocessing
+```{r}
+name = colnames(train_functional_connectome)
+name[19700:19901]
+```
+0-199
+1+2+3...+199
+200*200/2 - (200/2); no diagonal
+```{r}
+data = train_functional_connectome
+participant_ids <- data$participant_id
+conn_data <- data[ , -which(names(data) == "participant_id")]
+
+
+# -------------------------------
+# 2. Define a Function to Reconstruct the Full Matrix
+# -------------------------------
+# This function takes a vector 'v' (of length 19,900) and returns a 200x200 symmetric matrix
+reconstruct_matrix <- function(v, n = 200) {
+  m <- matrix(0, n, n)         # create an empty matrix
+  m[upper.tri(m)] <- v         # fill in the upper triangle (diagonal remains 0)
+  m[lower.tri(m)] <- t(m)[lower.tri(m)]  # mirror the upper triangle to the lower triangle
+  return(m)
+}
+
+# -------------------------------
+# 3. Reconstruct and Visualize a Single Subject's Connectivity Matrix
+# -------------------------------
+# For example, reconstruct the matrix for the first participant
+first_vector <- as.numeric(conn_data[100, ])
+first_matrix <- reconstruct_matrix(first_vector, n = 200)
+
+# Visualize this matrix as a heatmap
+pheatmap(first_matrix,
+         main = paste("Connectivity Matrix for Participant", participant_ids[1]),
+         cluster_rows = TRUE,
+         cluster_cols = TRUE)
+
+```
+
+
+```{r}
+
+# -------------------------------
+# 4. Compute an Average Connectivity Matrix Across All Subjects
+# -------------------------------
+# Initialize a matrix to accumulate connectivity values
+nSubjects <- nrow(conn_data)
+nNodes <- 200
+avg_matrix <- matrix(0, nNodes, nNodes)
+
+# Loop over subjects and accumulate matrices
+for (i in 1:nSubjects) {
+  vec <- as.numeric(conn_data[i, ])
+  m <- reconstruct_matrix(vec, n = nNodes)
+  avg_matrix <- avg_matrix + m
+}
+avg_matrix <- avg_matrix / nSubjects  # compute the average
+
+# Visualize the average connectivity matrix
+pheatmap(avg_matrix,
+         main = "Average Connectivity Matrix Across Subjects",
+         cluster_rows = TRUE,
+         cluster_cols = TRUE)
+
+```
+
+https://pmc.ncbi.nlm.nih.gov/articles/PMC5008686/#S3
+
+
+https://rdrr.io/github/EBlini/FCnet/f/README.md
+```{r}
+library("FCnet")
+```
+
+```{r}
+data("MeanFC") #the object MeanFC is now available
+
+set.seed(1)
+
+N_subs= 50 #number of participants/matrices
+subjs_variability= 0.2 #variability (sd) between matrices
+
+#this function creates several matrices by adding gaussian noise
+#with sd "variability" to a reference matrix
+m_start= simulateMat(mat = MeanFC, 
+                     Nmat = N_subs, 
+                     mat_variability = subjs_variability)
+```
+
+Feature reduction
