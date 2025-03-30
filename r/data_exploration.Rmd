@@ -11,8 +11,26 @@ knitr::opts_chunk$set(echo = TRUE)
 
 
 ```{r}
-library(pheatmap)
-library(igraph)
+# Install and Load Necessary Libraries
+if (!require(tidyverse)) install.packages("tidyverse")
+if (!require(readxl)) install.packages("readxl")
+if (!require(ggplot2)) install.packages("ggplot2")
+if (!require(caret)) install.packages("caret")
+if (!require(data.table)) install.packages("data.table")
+if (!require(corrplot)) install.packages("corrplot")
+if (!require(Rtsne)) install.packages("Rtsne")  # For dimensionality reduction in functional connectome
+if (!require(Matrix)) install.packages("Matrix")
+
+library(tidyverse)
+library(readxl)
+library(ggplot2)
+library(caret)
+library(data.table)
+library(corrplot)
+#library(Rtsne)
+library(Matrix)
+library(mice)
+library(Hmisc)
 ```
 
 ```{r}
@@ -23,6 +41,7 @@ setwd("/Users/jinglv/Desktop/RA/widsdatathon2025")
 
 path <- "data/train"  # Update this with your actual path
 path2<-"/Users/jinglv/Downloads"
+path3<-"data/test" 
 
 
 # Read the Excel files
@@ -30,6 +49,12 @@ train_categorical_metadata <- read_excel(file.path(path, "TRAIN_CATEGORICAL_META
 train_functional_connectome <- read_csv(file.path(path2, "TRAIN_FUNCTIONAL_CONNECTOME_MATRICES.csv"))
 train_quantitative_metadata <- read_excel(file.path(path, "TRAIN_QUANTITATIVE_METADATA.xlsx"))
 training_solutions <- read_excel(file.path(path, "TRAINING_SOLUTIONS.xlsx"))
+
+test_categorical_metadata <- read_excel(file.path(path3, "TEST_CATEGORICAL.xlsx"))
+test_functional_connectome <- read_csv(file.path(path2, "TEST_FUNCTIONAL_CONNECTOME_MATRICES.csv"))
+test_quantitative_metadata <- read_excel(file.path(path3, "TEST_QUANTITATIVE_METADATA.xlsx"))
+
+
 
 # Display the first few rows of each dataset
 head(train_categorical_metadata)
@@ -40,6 +65,170 @@ head(training_solutions)
 
 summary(train_functional_connectome$`110throw_153thcolumn`)
 ```
+
+
+# missing
+```{r}
+
+
+# Check for Missing Values
+missing_values <- function(df, name) {
+  print(paste("Missing Values in:", name))
+  print(colSums(is.na(df)))
+}
+train_categorical_metadata[train_categorical_metadata == "NA"] <- NA
+train_functional_connectome[train_functional_connectome == "NA"] <- NA
+train_quantitative_metadata[train_quantitative_metadata == "NA"] <- NA
+
+test_categorical_metadata[test_categorical_metadata == "NA"] <- NA
+test_functional_connectome[test_functional_connectome == "NA"] <- NA
+test_quantitative_metadata[test_quantitative_metadata == "NA"] <- NA
+
+
+training_solutions[training_solutions == "NA"] <- NA
+
+train_quantitative_metadata$MRI_Track_Age_at_Scan = as.numeric(train_quantitative_metadata$MRI_Track_Age_at_Scan)
+
+missing_values(train_categorical_metadata, "Categorical Metadata")
+#missing_values(train_functional_connectome, "Functional Connectome")
+missing_values(train_quantitative_metadata, "Quantitative Metadata")
+missing_values(training_solutions, "Training Solutions")
+
+missing_values(test_categorical_metadata, "Categorical Metadata")
+#missing_values(train_functional_connectome, "Functional Connectome")
+missing_values(test_quantitative_metadata, "Quantitative Metadata")
+
+# XGBoost!!!
+# KNN;imputation!!
+
+# Function to Check for Missing Values in Any Dataset
+missing_values2 <- function(df, name) {
+  missing_data <- colSums(is.na(df))
+  missing_data <- missing_data[missing_data > 0]  # Filter only columns with missing values
+  
+  if (length(missing_data) == 0) {
+    print(paste("No missing values found in:", name))
+  } else {
+    print(paste("Missing Values in:", name))
+    print(missing_data)
+  }
+}
+
+# Check for Missing Values in Functional Connectome Dataset
+missing_values2(train_functional_connectome, "Functional Connectome")
+
+# ----- 1. Data Visualization -----
+```
+
+
+
+```{r}
+# Load necessary libraries
+library(VIM)
+library(dplyr)
+
+# Convert character columns to factors
+train_categorical_metadata <- train_categorical_metadata %>%
+  mutate(across(where(is.character), as.factor))
+
+# Perform kNN imputation
+# k = 5 is common; adjust as needed
+# imp_var = FALSE avoids creating *_imp columns for missing indicators
+imputed_data <- kNN(train_categorical_metadata, k = 5, imp_var = FALSE)
+
+```
+  
+```{r}
+# Update the original datasets with imputed values
+train_categorical_metadata$PreInt_Demos_Fam_Child_Ethnicity <- imputed_data$PreInt_Demos_Fam_Child_Ethnicity
+
+# Verify that missing values have been imputed
+missing_values(train_categorical_metadata, "Categorical Metadata (Post-Imputation)")
+
+
+library(writexl)
+
+# Define the full file path
+file_path <- file.path(path, "TRAIN_CATEGORICAL_METADATA_imputed_Jing.xlsx")
+
+# Save the DataFrame to the specified Excel file
+write_xlsx(train_categorical_metadata, file_path)
+```
+
+
+train and test combine together and then impute;
+
+
+
+# age predict model
+```{r}
+
+library(glmnet)
+library(dplyr)
+
+
+
+# Merge datasets on 'participant_id'
+p_data <- train_functional_connectome %>%
+  inner_join(train_quantitative_metadata, by = "participant_id")
+
+
+
+# Clean column names
+colnames(p_data) <- make.names(colnames(p_data), unique = TRUE)
+colnames(p_data) <- gsub("\\.", "_", colnames(p_data))
+
+```
+
+```{r}
+# Subset with complete MRI_Track_Age_at_Scan
+train_data <- p_data %>%
+  filter(!is.na(MRI_Track_Age_at_Scan))
+
+# Subset with missing MRI_Track_Age_at_Scan
+impute_data <- p_data %>%
+  filter(is.na(MRI_Track_Age_at_Scan))
+
+# Define predictor variables (excluding 'participant_id' and 'MRI_Track_Age_at_Scan')
+predictors <- setdiff(names(train_data), c("participant_id", "MRI_Track_Age_at_Scan"))
+
+# Create predictor matrix (X) and response vector (y)
+X_train <- as.matrix(train_data[, predictors])
+y_train <- train_data$MRI_Track_Age_at_Scan
+
+```
+
+```{r}
+# Perform cross-validated Lasso regression
+cv_lasso <- cv.glmnet(X_train, y_train, alpha = 1, nfolds = 10)
+
+# Extract the best lambda value
+best_lambda <- cv_lasso$lambda.min
+
+```
+
+```{r}
+# Create predictor matrix for imputation
+X_impute <- as.matrix(impute_data[, predictors])
+
+# Predict missing values
+imputed_values <- predict(cv_lasso, s = best_lambda, newx = X_impute)
+
+# Impute the predicted values
+p_data$MRI_Track_Age_at_Scan[is.na(p_data$MRI_Track_Age_at_Scan)] <- imputed_values
+
+common_columns <- intersect(colnames(p_data), colnames(train_quantitative_metadata))
+
+p_data_selected <- select(p_data, all_of(common_columns))
+p_data_selected$MRI_Track_Age_at_Scan
+
+# Define the full file path
+file_path <- file.path(path, "TRAIN_QUANTITATIVE_METADATA_imputed_Jing.xlsx")
+
+# Save the DataFrame to the specified Excel file
+write_xlsx(p_data_selected, file_path)
+```
+
 
 # MRI preprocessing
 ```{r}
